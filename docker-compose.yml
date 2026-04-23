@@ -1,0 +1,81 @@
+services:
+  db:
+    profiles: ["postgres"]
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${DB_NAME}
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build: ./backend
+    restart: unless-stopped
+    env_file: .env
+    depends_on:
+      db:
+        condition: service_healthy
+        required: false      # USE_POSTGRES=False bo'lsa db kutilmaydi
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./backend/static:/app/static
+      - ./backend/media:/app/media
+      - ./backend/logs:/app/logs
+    expose:
+      - "8000"
+
+  nginx:
+    image: nginx:alpine
+    restart: unless-stopped
+    ports:
+      - "${NGINX_PORT:-8001}:80"
+    depends_on:
+      - backend
+    volumes:
+      - ./backend/nginx/default.conf:/etc/nginx/conf.d/default.conf
+      - ./backend/static:/app/static
+      - ./backend/media:/app/media
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        VITE_API_URL: ${VITE_API_URL:-http://localhost:8001/api}
+    restart: unless-stopped
+    ports:
+      - "${FRONTEND_PORT:-5173}:80"
+    depends_on:
+      - backend
+
+  bot:
+    build: ./bot
+    restart: unless-stopped
+    env_file: ./bot/.env
+    depends_on:
+      redis:
+        condition: service_healthy
+      backend:
+        condition: service_started
+    volumes:
+      - ./bot/logs:/app/logs
+      - ./bot/data:/app/data
+
+volumes:
+  postgres_data:

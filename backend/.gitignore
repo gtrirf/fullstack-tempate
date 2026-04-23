@@ -1,0 +1,6 @@
+.env
+db.sqlite3
+logs
+static
+apps/*/migrations/*.py
+!apps/*/migrations/__init__.py
